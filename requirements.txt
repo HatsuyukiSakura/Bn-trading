@@ -1,0 +1,12 @@
+pandas
+numpy
+scikit-learn
+xgboost
+joblib
+gspread
+oauth2client
+requests
+matplotlib
+seaborn
+schedule
+python-binance

@@ -10,3 +10,9 @@ matplotlib
 seaborn
 schedule
 python-binance
+flask
+requests
+google-api-python-client
+google-auth
+google-auth-oauthlib
+python-telegram-bot

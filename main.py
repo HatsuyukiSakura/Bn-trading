@@ -53,3 +53,12 @@ if __name__ == "__main__":
     threading.Thread(target=background_worker, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
+
+app = Flask(__name__)  # 必須這行存在
+
+# 保留 app 給 gunicorn 掛載
+if __name__ == "__main__":
+    from your_module import background_worker  # 如果需要
+    threading.Thread(target=background_worker, daemon=True).start()
+

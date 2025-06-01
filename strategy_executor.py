@@ -1,6 +1,6 @@
-# strategy_executor.py
+# strategy_executor.py（修正 AIModel 匯入與使用）
 
-from ai_model import load_model, predict_signal
+from ai_model import AIModel
 from trade_manager import open_trade, close_trade, get_open_positions
 from scanner import get_top_symbols
 from risk_control import check_risk
@@ -11,7 +11,7 @@ import time
 
 class StrategyExecutor:
     def __init__(self):
-        self.model = load_model()
+        self.model = AIModel()
         self.symbols = []
 
     def update_symbols(self):
@@ -21,7 +21,8 @@ class StrategyExecutor:
     def evaluate_and_trade(self):
         for symbol in self.symbols:
             if check_risk(symbol):
-                signal = predict_signal(symbol, self.model)
+                features = self.get_features(symbol)  # 這方法需實作或整合資料
+                signal = self.model.predict_signal(features)
                 print(f"{symbol} 信號：{signal}")
 
                 if signal == "buy":
@@ -48,6 +49,12 @@ class StrategyExecutor:
         self.update_symbols()
         self.evaluate_and_trade()
         self.auto_manage_positions()
+
+    def get_features(self, symbol):
+        # 這裡應整合歷史行情數據轉換為特徵格式
+        # 示例可返回一個 np.ndarray（含最近一筆特徵）
+        import numpy as np
+        return np.random.rand(10, 5)  # 取代為實際特徵生成邏輯
 
 # 例行任務（可設為排程）
 if __name__ == "__main__":

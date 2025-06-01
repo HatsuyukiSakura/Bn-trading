@@ -1,7 +1,7 @@
-# main.py（Flask + Telegram + 排程，適用 Cloud Run）
+# main.py（修正：使用 get_top_symbols 取代 SymbolScanner 類別）
 
 from flask import Flask, request
-from symbol_scanner import SymbolScanner
+from symbol_scanner import get_top_symbols
 from strategy_executor import StrategyExecutor
 from telegram_bot import TelegramBot
 from google_sheets_logger import log_trade
@@ -10,9 +10,7 @@ import time
 import threading
 import os
 
-# 初始化 Flask 與元件
 app = Flask(__name__)
-scanner = SymbolScanner()
 executor = StrategyExecutor()
 bot = TelegramBot()
 
@@ -30,7 +28,7 @@ def manual_trigger():
 
 def run_cycle():
     try:
-        symbols = scanner.scan()
+        symbols = get_top_symbols()
         recommendations = executor.run(symbols)
         for rec in recommendations:
             result = executor.execute_strategy(rec)
@@ -53,6 +51,7 @@ if __name__ == "__main__":
     threading.Thread(target=background_worker, daemon=True).start()
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
+
 
 
 app = Flask(__name__)  # 必須這行存在

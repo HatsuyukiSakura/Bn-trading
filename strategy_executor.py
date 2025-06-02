@@ -1,4 +1,4 @@
-# strategy_executor.py（修正 AIModel 匯入與使用）
+# strategy_executor.py（修正版）
 
 from ai_model import AIModel
 from trade_manager import open_trade, close_trade, get_open_positions
@@ -7,8 +7,6 @@ from risk_control import check_risk
 from telegram_bot import telegram_bot
 from record_logger import log_trade
 from datetime import datetime
-import time
-import schedule
 import numpy as np
 
 class StrategyExecutor:
@@ -59,24 +57,11 @@ class StrategyExecutor:
             telegram_bot.send(f"⚠️ 錯誤：自動管理持倉失敗\n{e}")
 
     def get_features(self, symbol):
-        # ✅ 此處應整合實際特徵提取邏輯（目前為測試用）
+        # ✅ 測試用隨機特徵，實際部署請換成技術指標資料等
         return np.random.rand(10, 5)
 
     def run(self):
-        print(f"📈 策略執行時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"\n📈 策略執行時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         self.update_symbols()
         self.evaluate_and_trade()
         self.auto_manage_positions()
-
-# ✅ 每 4 小時執行一次策略
-if __name__ == "__main__":
-    executor = StrategyExecutor()
-    schedule.every(4).hours.do(executor.run)
-
-    print("✅ 策略排程啟動中，每 4 小時執行一次")
-    telegram_bot.send("🤖 策略排程已啟動，每 4 小時執行一次")
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-

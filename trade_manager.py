@@ -1,5 +1,3 @@
- #trade_manager.py
-
 from binance.client import Client
 from binance.enums import *
 import os
@@ -8,7 +6,7 @@ API_KEY = os.getenv("BINANCE_API_KEY")
 API_SECRET = os.getenv("BINANCE_API_SECRET")
 client = Client(API_KEY, API_SECRET)
 
-def open_position(symbol, side, quantity, leverage=10):
+def open_trade(symbol, side, quantity, leverage=10):
     try:
         client.futures_change_leverage(symbol=symbol, leverage=leverage)
         order = client.futures_create_order(
@@ -21,7 +19,7 @@ def open_position(symbol, side, quantity, leverage=10):
     except Exception as e:
         return f"{symbol} 開倉失敗：{e}"
 
-def close_position(symbol):
+def close_trade(symbol):
     try:
         pos_info = client.futures_position_information(symbol=symbol)
         for pos in pos_info:
@@ -39,7 +37,7 @@ def close_position(symbol):
     except Exception as e:
         return f"{symbol} 平倉失敗：{e}"
 
-def get_positions():
+def get_open_positions():
     try:
         positions = client.futures_position_information()
         active = [
@@ -53,7 +51,10 @@ def get_positions():
         ]
         if not active:
             return "目前無持倉"
-        return "\n".join([f"{p['symbol']} 持倉 {p['amt']} 入場價 {p['entry']} 未實現盈虧 {p['unrealized']}" for p in active])
+        return "\n".join([
+            f"{p['symbol']} 持倉 {p['amt']} 入場價 {p['entry']} 未實現盈虧 {p['unrealized']}"
+            for p in active
+        ])
     except Exception as e:
         return f"查詢持倉失敗：{e}"
 

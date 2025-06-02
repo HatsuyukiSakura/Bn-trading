@@ -1,4 +1,4 @@
-# scanner.py
+# symbol_scanner.py
 
 import time
 import requests

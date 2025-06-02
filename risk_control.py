@@ -66,5 +66,14 @@ def check_risk(symbol, entry_price, stop_loss, take_profit, max_loss_pct=5.0):
 def get_risk_status():
     date = datetime.date.today().isoformat()
     return f"[風控狀態] 今日累積損益：{daily_pnl[date]} USDT，最大允許虧損：{DAILY_LOSS_LIMIT} USDT"
-
+def check_risk(symbol):
+    """
+    風控檢查，回傳 True 表示允許交易，False 表示禁止交易。
+    這裡示範簡單判斷是否超過每日虧損限制。
+    """
+    if not check_daily_limit():
+        print(f"[風控] 超過每日虧損限制，禁止交易")
+        return False
+    # 這裡可以擴充更多風控條件，例如移動止損判斷等
+    return True
 

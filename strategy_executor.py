@@ -3,7 +3,7 @@
 from ai_model import AIModel
 from trade_manager import open_trade, close_trade, get_open_positions
 from symbol_scanner import get_top_symbols
-from risk_control import check_risk
+from risk_control import check_risk, record_trade, should_trigger_trailing_stop, get_risk_status
 from telegram_bot import telegram_bot
 from record_logger import log_trade
 from datetime import datetime

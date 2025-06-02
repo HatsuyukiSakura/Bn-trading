@@ -9,6 +9,18 @@ import schedule
 import time
 import threading
 import os
+from binance.client import Client
+
+api_key = os.getenv("BINANCE_API_KEY")
+api_secret = os.getenv("BINANCE_API_SECRET")
+client = Client(api_key, api_secret)
+
+print("✅ 測試連線中...")
+try:
+    acc_info = client.futures_account()
+    print(f"🎉 成功連線到 Binance。帳戶餘額數量：{len(acc_info['assets'])}")
+except Exception as e:
+    print(f"❌ Binance API 測試失敗：{e}")
 
 app = Flask(__name__)
 executor = StrategyExecutor()

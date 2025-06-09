@@ -1,0 +1,5 @@
+python-binance # 幣安 API 庫 
+google-cloud-pubsub
+google-cloud-secret-manager
+
+pandas 

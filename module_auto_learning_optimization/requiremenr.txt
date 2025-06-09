@@ -1,0 +1,10 @@
+google-cloud-firestore
+google-cloud-pubsub
+pandas
+# 如果您真的要集成 ML 模型，請添加以下庫：
+scikit-learn
+joblib
+tensorflow
+# 或 pytorch，取決於您的模型框架
+google-cloud-storage 
+# 如果模型存儲在 GCS

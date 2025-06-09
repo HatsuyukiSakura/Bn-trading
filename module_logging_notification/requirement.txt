@@ -1,0 +1,5 @@
+google-cloud-pubsub 
+google-cloud-logging
+google-cloud-secret-manager 
+requests 
+# HTTP (Telegram Bot API)

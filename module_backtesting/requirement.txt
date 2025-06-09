@@ -1,0 +1,6 @@
+google-cloud-firestore 
+pandas
+
+matplotlib
+
+google-cloud-pubsub

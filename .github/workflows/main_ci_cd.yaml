@@ -1,0 +1,247 @@
+name: Deploy Trading Bot Modules to Cloud Run
+
+on:
+  push:
+    branches:
+      - main # 當代碼推送到 main 分支時觸發
+    paths: # 只有當相關模組的代碼或 .github/workflows 發生變化時才觸發
+      - 'module_config_init/**'
+      - 'module_data_acquisition_websocket/**'
+      - 'module_order_book_analysis/**'
+      - 'module_coin_analysis_selection/**'
+      - 'module_multi_strategy_decision/**'
+      - 'module_risk_money_management/**'
+      - 'module_trade_execution/**'
+      - 'module_auto_learning_optimization/**'
+      - 'module_logging_notification/**'
+      - 'module_backtesting/**'
+      - 'module_paper_trading/**'
+      - 'common/**' # 如果 common 資料夾的變化會影響所有模組，則也要觸發
+      - '.github/workflows/main_ci_cd.yaml'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }} # 從 GitHub Secrets 中獲取 GCP 專案 ID
+  GCR_HOSTNAME: asia-east1-docker.pkg.dev # 根據您的 Google Cloud Region 選擇適當的 Artifact Registry hostname
+  REGION: asia-east1 # 您的 GCP 部署區域
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write' # 允許 GitHub Actions 獲取 OIDC token
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate with Google Cloud
+        id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          workload_identity_provider: 'projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider' # 替換為您的 Workload Identity Provider
+          service_account: 'github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com' # 替換為您的服務帳戶 Email
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker to use Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCR_HOSTNAME }}
+
+      # --- 部署模組列表 ---
+      - name: Deploy module_config_init
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-config-init # Cloud Run 服務名稱
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-config-init:${{ github.sha }} # 映像名稱
+          region: ${{ env.REGION }}
+          source: module_config_init # Dockerfile 所在的路徑
+          env_vars: | # 設定環境變數
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            BINANCE_API_KEY_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/BINANCE_API_KEY/versions/latest
+            BINANCE_SECRET_KEY_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/BINANCE_SECRET_KEY/versions/latest
+            TELEGRAM_BOT_TOKEN_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/TELEGRAM_BOT_TOKEN/versions/latest
+            TELEGRAM_CHAT_ID_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/TELEGRAM_CHAT_ID/versions/latest
+            TRADE_SYMBOL=BTCUSDT
+            KLINE_INTERVAL=1m
+            DEFAULT_RISK_PERCENTAGE=0.01
+          # 您可以添加更多的 Cloud Run 參數，例如：
+          # no_allow_unauthenticated: true # 如果服務需要認証
+          # concurrency: 1 # 每個實例處理的請求數量
+          # min_instances: 0
+          # max_instances: 1
+
+      - name: Deploy module_data_acquisition_websocket
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-data-acquisition-websocket
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-data-acquisition-websocket:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_data_acquisition_websocket
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            BINANCE_API_KEY_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/BINANCE_API_KEY/versions/latest
+            BINANCE_SECRET_KEY_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/BINANCE_SECRET_KEY/versions/latest
+            PUBSUB_TOPIC_KLINE_UPDATES=kline-updates
+            PUBSUB_TOPIC_ORDER_BOOK_UPDATES=order-book-updates
+            PUBSUB_TOPIC_ACCOUNT_UPDATES=account-updates
+            TRADE_SYMBOLS=BTCUSDT,ETHUSDT # 您想訂閱的交易對，用逗號分隔
+            KLINE_INTERVALS=1m,5m # 您想訂閱的K線間隔，用逗號分隔
+          # 如果這個服務需要持續運行，可能需要設定 min_instances: 1
+          min_instances: 1
+          # 建議為這個服務啟用 Pub/Sub 觸發器（在 GCP Console 中設置）
+
+      - name: Deploy module_order_book_analysis
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-order-book-analysis
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-order-book-analysis:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_order_book_analysis
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            PUBSUB_TOPIC_ORDER_BOOK_UPDATES=order-book-updates
+            PUBSUB_TOPIC_ORDER_BOOK_SIGNALS=order-book-signals
+            WHALE_THRESHOLD_QTY=100.0 # 鯨魚訂單閾值
+          # 為這個服務設定 Pub/Sub 訂閱觸發器：PUBSUB_TOPIC_ORDER_BOOK_UPDATES
+
+      - name: Deploy module_coin_analysis_selection
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-coin-analysis-selection
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-coin-analysis-selection:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_coin_analysis_selection
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            PUBSUB_TOPIC_KLINE_UPDATES=kline-updates
+            PUBSUB_TOPIC_COIN_SELECTION_SIGNALS=coin-selection-signals
+          # 為這個服務設定 Pub/Sub 訂閱觸發器：PUBSUB_TOPIC_KLINE_UPDATES
+
+      - name: Deploy module_multi_strategy_decision
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-multi-strategy-decision
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-multi-strategy-decision:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_multi_strategy_decision
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            PUBSUB_TOPIC_COIN_SELECTION_SIGNALS=coin-selection-signals
+            PUBSUB_TOPIC_ORDER_BOOK_SIGNALS=order-book-signals
+            PUBSUB_TOPIC_TRADE_COMMANDS=trade-commands
+            BUY_SIGNAL_THRESHOLD=0.5
+            SELL_SIGNAL_THRESHOLD=-0.5
+            DEFAULT_TRADE_QUANTITY_PERCENT=0.001
+          # 為這個服務設定兩個 Pub/Sub 訂閱觸發器：
+          # 1. PUBSUB_TOPIC_COIN_SELECTION_SIGNALS
+          # 2. PUBSUB_TOPIC_ORDER_BOOK_SIGNALS
+
+      - name: Deploy module_risk_money_management
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-risk-money-management
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-risk-money-management:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_risk_money_management
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            PUBSUB_TOPIC_TRADE_COMMANDS=trade-commands
+            PUBSUB_TOPIC_FINAL_TRADE_EXECUTION=final-trade-execution
+            PUBSUB_TOPIC_RISK_ALERTS=risk-alerts
+            INITIAL_PORTFOLIO_VALUE=10000.0 # 模擬初始資金
+            DEFAULT_RISK_PER_TRADE=0.01
+            MAX_PORTFOLIO_RISK=0.05
+            STOP_LOSS_PERCENTAGE_BUY=0.01
+            TAKE_PROFIT_PERCENTAGE_BUY=0.02
+            STOP_LOSS_PERCENTAGE_SELL=0.01
+            TAKE_PROFIT_PERCENTAGE_SELL=0.02
+            BTCUSDT_PRICE=20000.0 # 模擬 BTCUSDT 價格，生產環境應從數據源獲取
+          # 為這個服務設定 Pub/Sub 訂閱觸發器：PUBSUB_TOPIC_TRADE_COMMANDS
+
+      - name: Deploy module_trade_execution
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-trade-execution
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-trade-execution:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_trade_execution
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            BINANCE_API_KEY_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/BINANCE_API_KEY/versions/latest
+            BINANCE_SECRET_KEY_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/BINANCE_SECRET_KEY/versions/latest
+            PUBSUB_TOPIC_FINAL_TRADE_EXECUTION=final-trade-execution
+            PUBSUB_TOPIC_TRADE_REPORTS=trade-reports
+          # 為這個服務設定 Pub/Sub 訂閱觸發器：PUBSUB_TOPIC_FINAL_TRADE_EXECUTION
+
+      - name: Deploy module_auto_learning_optimization
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-auto-learning-optimization
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-auto-learning-optimization:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_auto_learning_optimization
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            PUBSUB_TOPIC_OPTIMIZATION_ALERTS=optimization-alerts
+            TRADE_REPORTS_COLLECTION=trade_reports
+            STRATEGY_CONFIG_COLLECTION=strategy_config
+            LOOKBACK_DAYS_FOR_OPTIMIZATION=7
+          # 這個模組通常由 Cloud Scheduler 定期觸發，而不是 Pub/Sub。
+          # 在 GCP Console 中，您可以為此服務創建一個 Cloud Scheduler Job。
+
+      - name: Deploy module_logging_notification
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-logging-notification
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-logging-notification:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_logging_notification
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            TELEGRAM_BOT_TOKEN_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/TELEGRAM_BOT_TOKEN/versions/latest
+            TELEGRAM_CHAT_ID_SECRET_NAME=projects/${{ env.PROJECT_ID }}/secrets/TELEGRAM_CHAT_ID/versions/latest
+            PUBSUB_TOPIC_TRADE_REPORTS=trade-reports
+            PUBSUB_TOPIC_RISK_ALERTS=risk-alerts
+            PUBSUB_TOPIC_OPTIMIZATION_ALERTS=optimization-alerts
+          # 為這個服務設定三個 Pub/Sub 訂閱觸發器：
+          # 1. PUBSUB_TOPIC_TRADE_REPORTS
+          # 2. PUBSUB_TOPIC_RISK_ALERTS
+          # 3. PUBSUB_TOPIC_OPTIMIZATION_ALERTS
+
+      - name: Deploy module_backtesting
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-backtesting
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-backtesting:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_backtesting
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            PUBSUB_TOPIC_BACKTEST_REPORTS=backtest-reports
+            KLINE_DATA_COLLECTION=historical_kline_data
+            BACKTEST_SYMBOL=BTCUSDT
+            BACKTEST_INTERVAL=1h
+            BACKTEST_DAYS=30
+            BACKTEST_INITIAL_BALANCE=10000.0
+          # 這個模組通常是手動觸發或由 Cloud Scheduler 觸發。
+
+      - name: Deploy module_paper_trading
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: module-paper-trading
+          image: ${{ env.GCR_HOSTNAME }}/${{ env.PROJECT_ID }}/bn-trading-bot/module-paper-trading:${{ github.sha }}
+          region: ${{ env.REGION }}
+          source: module_paper_trading
+          env_vars: |
+            GCP_PROJECT_ID=${{ env.PROJECT_ID }}
+            PUBSUB_TOPIC_FINAL_TRADE_EXECUTION=final-trade-execution
+            PUBSUB_TOPIC_PAPER_TRADE_REPORTS=paper-trade-reports
+            PAPER_ACCOUNT_COLLECTION=paper_trading_accounts
+            PAPER_TRADES_COLLECTION=paper_trading_history
+            PAPER_TRADING_INITIAL_BALANCE=10000.0
+            MOCK_BTCUSDT_PRICE=20000.0 # 模擬 BTCUSDT 價格
+            MOCK_ETHUSDT_PRICE=1500.0 # 模擬 ETHUSDT 價格
+          # 為這個服務設定 Pub/Sub 訂閱觸發器：PUBSUB_TOPIC_FINAL_TRADE_EXECUTION (如果您想在模擬交易模式下接收所有交易指令)
+          # 或者，您可以選擇只將部分指令發送到 paper-trading 模組，這取決於您的設計。
+

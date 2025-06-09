@@ -1,0 +1,18 @@
+# module_auto_learning_optimization/Dockerfile
+FROM python:3.10-slim-buster
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# 此模組通常由 Cloud Scheduler 調度觸發，或 Pub/Sub 訊息觸發，
+# Cloud Run 服務會接收一個 HTTP POST 請求。
+# 因此，如果您希望它作為 HTTP 服務運行，需要使用 Flask。
+# 如果它只是一個後台批處理，CMD 執行腳本即可。
+# 我們這裡假設它被 Pub/Sub 觸發（通過 Cloud Run Eventarc），所以 CMD 執行 main.py 是合適的。
+CMD ["python", "main.py"]
+

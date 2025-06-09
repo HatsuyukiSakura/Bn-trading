@@ -1,0 +1,16 @@
+# module_config_init/Dockerfile
+FROM python:3.10-slim-buster
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Cloud Run 服務預設監聽 8080 端口
+# 這是一個簡單的配置服務，它會執行 initialize_system_config()
+# 如果您打算讓它作為 HTTP 服務響應，請在 main.py 中添加 Flask 等 Web 框架
+CMD ["python", "main.py"]
+

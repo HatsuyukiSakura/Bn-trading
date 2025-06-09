@@ -1,0 +1,14 @@
+# module_backtesting/Dockerfile
+FROM python:3.10-slim-buster
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# 此模組通常由 Cloud Scheduler 調度觸發，或手動執行
+CMD ["python", "main.py"]
+

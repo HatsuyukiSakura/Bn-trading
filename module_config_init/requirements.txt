@@ -1,0 +1,4 @@
+google-cloud-secret-manager
+google-cloud-firestore
+# 如果您打算在其他模組中從此模組導入配置函數，則所有模組都需要這些依賴
+# 或者，讓每個模組獨立處理其配置獲取

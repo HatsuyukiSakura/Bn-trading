@@ -39,8 +39,8 @@ jobs:
         id: 'auth'
         uses: 'google-github-actions/auth@v2'
         with:
-          workload_identity_provider: 'projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider' # 替換為您的 Workload Identity Provider
-          service_account: 'github-actions-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com' # 替換為您的服務帳戶 Email
+          workload_identity_provider: 'projects/378318425822/locations/global/workloadIdentityPools/github-actions-pool/providers/github-provider' # 替換為您的 Workload Identity Provider
+          service_account: 'github-cloud-deployer@crypto-ai-bot-460910.iam.gserviceaccount.com' # 替換為您的服務帳戶 Email
 
       - name: Set up Google Cloud SDK
         uses: google-github-actions/setup-gcloud@v2

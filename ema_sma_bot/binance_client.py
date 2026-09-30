@@ -224,6 +224,15 @@ class BinanceClient:
         return self._request("POST", "/fapi/v1/leverage",
                              {"symbol": symbol, "leverage": leverage}, signed=True)
 
+    def set_margin_type(self, symbol: str, margin_type: str) -> None:
+        try:
+            self._request("POST", "/fapi/v1/marginType",
+                          {"symbol": symbol, "marginType": margin_type}, signed=True)
+        except BinanceAPIError as exc:
+            # -4046: 已經是該保證金模式，不需變更
+            if not (isinstance(exc.payload, dict) and exc.payload.get("code") == -4046):
+                raise
+
     # ------------------------------------------------------------------ 下單
     def market_order(self, symbol: str, side: str, quantity: Optional[str] = None,
                      quote_qty: Optional[str] = None, reduce_only: bool = False) -> dict:

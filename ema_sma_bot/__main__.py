@@ -46,6 +46,8 @@ def cmd_signal(cfg, args) -> int:
 def cmd_once(cfg, args) -> int:
     trader = Trader(cfg, _client(cfg), Notifier(cfg.telegram_token, cfg.telegram_chat_id))
     trader.client.sync_time()
+    if cfg.market == "futures" and not cfg.dry_run:
+        trader.prepare_futures()
     result = trader.step()
     print("此 K 線已處理過" if result is None else f"目標部位：{POSITION_NAMES[result]}")
     return 0

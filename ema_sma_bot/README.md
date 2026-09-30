@@ -1,7 +1,7 @@
 # 幣安 4H EMA150 / SMA150 自動交易系統
 
 獨立運作的趨勢跟隨交易機器人：每根 **4 小時 K 線收盤** 後計算 EMA150 與 SMA150，
-依規則自動調整幣安帳戶部位。支援 **現貨（只做多）** 與 **USDⓈ-M 永續合約（可多空）**。
+依規則自動調整幣安帳戶部位。預設為 **USDⓈ-M 永續合約、多空雙向、3 倍逐倉**，也可切換成現貨只做多。
 
 ## 策略規則
 
@@ -56,7 +56,7 @@ docker run -d --restart=always --env-file .env -v $(pwd)/data:/data ema-sma-bot
 | 變數 | 預設 | 說明 |
 | --- | --- | --- |
 | `BINANCE_API_KEY` / `BINANCE_API_SECRET` | – | API 金鑰（實盤必填）。請只開「讀取 + 交易」權限，**不要開提領**，並綁定 IP 白名單 |
-| `MARKET` | `spot` | `spot` 或 `futures` |
+| `MARKET` | `futures` | `futures`（USDⓈ-M 永續，預設）或 `spot` |
 | `BINANCE_TESTNET` | `true` | 是否使用測試網 |
 | `BINANCE_BASE_URL` | – | 自訂 API 網址（例如合約 demo 環境） |
 | `DRY_RUN` | `true` | `true` 時只記錄、不下單 |
@@ -64,8 +64,9 @@ docker run -d --restart=always --env-file .env -v $(pwd)/data:/data ema-sma-bot
 | `INTERVAL` | `4h` | K 線週期 |
 | `EMA_PERIOD` / `SMA_PERIOD` | `150` | 均線週期 |
 | `POSITION_PCT` | `0.95` | 進場時使用可用 USDT 的比例 |
-| `ALLOW_SHORT` | `false` | 允許做空（僅合約） |
-| `LEVERAGE` | `1` | 槓桿（僅合約） |
+| `ALLOW_SHORT` | `true` | 允許做空（僅合約） |
+| `LEVERAGE` | `3` | 槓桿（僅合約） |
+| `MARGIN_TYPE` | `ISOLATED` | 保證金模式：`ISOLATED` 逐倉 / `CROSSED` 全倉（僅合約；有持倉時無法切換） |
 | `KLINE_LIMIT` | `1000` | 計算指標用的 K 線數 |
 | `CLOSE_DELAY_SEC` | `5` | K 線收盤後延遲幾秒再抓資料 |
 | `STATE_FILE` | `ema_sma_bot_state.json` | 記錄已處理 K 線，重啟不會重複下單 |

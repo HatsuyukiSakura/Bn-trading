@@ -16,7 +16,7 @@ def _env_bool(name: str, default: bool) -> bool:
 class Config:
     api_key: str = ""
     api_secret: str = ""
-    market: str = "spot"            # spot | futures (USDⓈ-M 永續)
+    market: str = "futures"         # spot | futures (USDⓈ-M 永續)
     testnet: bool = True
     base_url: str = ""              # 自訂 API 網址（留空則依 market/testnet 自動選擇）
     dry_run: bool = True            # True 時只記錄訂單，不真正下單
@@ -24,9 +24,10 @@ class Config:
     interval: str = "4h"
     ema_period: int = 150
     sma_period: int = 150
-    allow_short: bool = False       # 僅 futures 有效
+    allow_short: bool = True        # 僅 futures 有效
     position_pct: float = 0.95      # 每次進場使用可用 USDT 的比例
-    leverage: int = 1               # 僅 futures 有效
+    leverage: int = 3               # 僅 futures 有效
+    margin_type: str = "ISOLATED"   # 僅 futures：ISOLATED（逐倉）| CROSSED（全倉）
     kline_limit: int = 1000         # 抓取 K 線數量（需遠大於均線週期以讓 EMA 收斂）
     close_delay_sec: int = 5        # K 線收盤後延遲幾秒再抓資料
     state_file: str = "ema_sma_bot_state.json"
@@ -48,6 +49,8 @@ class Config:
             raise ValueError("POSITION_PCT 必須介於 0 與 1 之間")
         if self.leverage < 1:
             raise ValueError("LEVERAGE 必須 >= 1")
+        if self.margin_type not in ("ISOLATED", "CROSSED"):
+            raise ValueError("MARGIN_TYPE 必須是 ISOLATED 或 CROSSED")
         if self.kline_limit < max(self.ema_period, self.sma_period) + 2:
             raise ValueError("KLINE_LIMIT 必須大於均線週期")
         if not self.dry_run and (not self.api_key or not self.api_secret):
@@ -58,7 +61,7 @@ def load_config() -> Config:
     cfg = Config(
         api_key=os.environ.get("BINANCE_API_KEY", ""),
         api_secret=os.environ.get("BINANCE_API_SECRET", ""),
-        market=os.environ.get("MARKET", "spot").strip().lower(),
+        market=os.environ.get("MARKET", "futures").strip().lower(),
         testnet=_env_bool("BINANCE_TESTNET", True),
         base_url=os.environ.get("BINANCE_BASE_URL", ""),
         dry_run=_env_bool("DRY_RUN", True),
@@ -66,9 +69,10 @@ def load_config() -> Config:
         interval=os.environ.get("INTERVAL", "4h"),
         ema_period=int(os.environ.get("EMA_PERIOD", "150")),
         sma_period=int(os.environ.get("SMA_PERIOD", "150")),
-        allow_short=_env_bool("ALLOW_SHORT", False),
+        allow_short=_env_bool("ALLOW_SHORT", True),
         position_pct=float(os.environ.get("POSITION_PCT", "0.95")),
-        leverage=int(os.environ.get("LEVERAGE", "1")),
+        leverage=int(os.environ.get("LEVERAGE", "3")),
+        margin_type=os.environ.get("MARGIN_TYPE", "ISOLATED").strip().upper(),
         kline_limit=int(os.environ.get("KLINE_LIMIT", "1000")),
         close_delay_sec=int(os.environ.get("CLOSE_DELAY_SEC", "5")),
         state_file=os.environ.get("STATE_FILE", "ema_sma_bot_state.json"),

@@ -167,6 +167,14 @@ class Trader:
         self._save_state()
         return target
 
+    def prepare_futures(self) -> None:
+        """設定保證金模式與槓桿（有持倉時幣安不允許切換保證金模式，失敗只記錄警告）。"""
+        try:
+            self.client.set_margin_type(self.cfg.symbol, self.cfg.margin_type)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("設定保證金模式 %s 失敗：%s", self.cfg.margin_type, exc)
+        self.client.set_leverage(self.cfg.symbol, self.cfg.leverage)
+
     def seconds_until_next_close(self) -> float:
         interval_ms = INTERVAL_MS[self.cfg.interval]
         now = self.client.server_time()
@@ -180,7 +188,7 @@ class Trader:
                            f"{self.cfg.symbol} {self.cfg.interval} {self.cfg.market} {mode} {net}")
         self.client.sync_time()
         if self.cfg.market == "futures" and not self.cfg.dry_run:
-            self.client.set_leverage(self.cfg.symbol, self.cfg.leverage)
+            self.prepare_futures()
 
         while True:
             try:

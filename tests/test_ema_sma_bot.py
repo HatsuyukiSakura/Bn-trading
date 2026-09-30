@@ -144,7 +144,7 @@ class FakeClient:
 
 
 def _cfg(tmp_path, **kw):
-    base = dict(dry_run=False, api_key="k", api_secret="s", state_file=str(tmp_path / "state.json"))
+    base = dict(market="spot", dry_run=False, api_key="k", api_secret="s", state_file=str(tmp_path / "state.json"))
     base.update(kw)
     return Config(**base)
 
@@ -207,4 +207,10 @@ def test_config_validation():
     with pytest.raises(ValueError):
         Config(position_pct=1.5).validate()
     Config().validate()
+    with pytest.raises(ValueError):
+        Config(margin_type="FOO").validate()
     assert Config(market="spot", allow_short=True).strategy_params.allow_short is False
+    # 預設為合約、多空雙向、3 倍逐倉
+    default = Config()
+    assert (default.market, default.leverage, default.margin_type) == ("futures", 3, "ISOLATED")
+    assert default.strategy_params.allow_short is True

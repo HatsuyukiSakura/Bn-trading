@@ -2,6 +2,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .env
-ema_sma_bot_state.json
-ema_sma_bot_state.json.tmp
+state.db
+*.db-journal
+logs/
 data/

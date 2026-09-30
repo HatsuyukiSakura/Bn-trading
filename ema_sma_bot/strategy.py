@@ -1,14 +1,18 @@
 """
-EMA150 / SMA150 趨勢策略（只使用已收盤的 K 線）。
+4H EMA150 趨勢策略（純做多，只使用已收盤的 K 線）。
 
-規則（以收盤價判斷）：
-  做多進場：close > EMA 且 close > SMA 且 EMA > SMA   （價格站上雙均線，且均線多頭排列）
-  做多出場：close < EMA 且 close < SMA                （價格跌破雙均線）
-  做空進場：close < EMA 且 close < SMA 且 EMA < SMA   （僅合約且 allow_short）
-  做空出場：close > EMA 且 close > SMA
+SIGNAL_MODE=ema（預設，研究報告回測的規則）：
+  close > EMA150 → LONG
+  close < EMA150 → FLAT
+  close == EMA150 → 維持原部位
 
-進場與出場條件不對稱（出場需跌破「兩條」均線），在雙均線之間的區域會維持原本
-部位，減少在均線附近來回洗單。
+SIGNAL_MODE=ema_sma（選用，加上 SMA150 濾網）：
+  進場：close > EMA 且 close > SMA 且 EMA > SMA
+  出場：close < EMA 且 close < SMA
+  其餘維持原部位
+
+盤中停損觸發後會「鎖住」該標的：必須先出現一次策略本身的出場訊號（例如收盤跌破
+EMA150），之後再次出現進場訊號才重新進場，避免停損後立刻在同一段行情追回。
 """
 from dataclasses import dataclass
 
@@ -18,14 +22,14 @@ from .indicators import ema, sma
 
 FLAT = 0
 LONG = 1
-SHORT = -1
 
 
 @dataclass(frozen=True)
 class StrategyParams:
     ema_period: int = 150
     sma_period: int = 150
-    allow_short: bool = False
+    mode: str = "ema"           # ema | ema_sma
+    stop_loss_pct: float = 0.0  # 0 = 不設停損
 
 
 def add_indicators(df: pd.DataFrame, params: StrategyParams) -> pd.DataFrame:
@@ -35,42 +39,38 @@ def add_indicators(df: pd.DataFrame, params: StrategyParams) -> pd.DataFrame:
     return out
 
 
-def next_position(current: int, close: float, ema_v: float, sma_v: float, allow_short: bool) -> int:
-    """根據目前部位與最新一根已收盤 K 線，回傳目標部位。"""
-    if pd.isna(ema_v) or pd.isna(sma_v):
+def desired_position(current: int, close: float, ema_v: float, sma_v: float, mode: str) -> int:
+    """依最新一根已收盤 K 線與目前部位回傳目標部位（LONG / FLAT）。"""
+    if pd.isna(ema_v) or (mode == "ema_sma" and pd.isna(sma_v)):
         return current
-
-    above = close > ema_v and close > sma_v
-    below = close < ema_v and close < sma_v
-    long_entry = above and ema_v > sma_v
-    short_entry = below and ema_v < sma_v
-
-    if current == LONG:
-        if below:
-            return SHORT if (allow_short and short_entry) else FLAT
-        return LONG
-    if current == SHORT:
-        if above:
-            return LONG if long_entry else FLAT
-        return SHORT
-    # FLAT
-    if long_entry:
-        return LONG
-    if allow_short and short_entry:
-        return SHORT
-    return FLAT
+    if mode == "ema":
+        if close > ema_v:
+            return LONG
+        if close < ema_v:
+            return FLAT
+        return current
+    if mode == "ema_sma":
+        if current == LONG:
+            return FLAT if (close < ema_v and close < sma_v) else LONG
+        return LONG if (close > ema_v and close > sma_v and ema_v > sma_v) else FLAT
+    raise ValueError(f"未知的 SIGNAL_MODE：{mode}")
 
 
-def compute_positions(df: pd.DataFrame, params: StrategyParams, initial: int = FLAT) -> pd.DataFrame:
-    """
-    逐根計算每根 K 線收盤後的目標部位，結果放在 `position` 欄。
-    df 需包含 close 欄位，且只能包含已收盤的 K 線。
-    """
+def exit_signal(close: float, ema_v: float, sma_v: float, mode: str) -> bool:
+    """策略本身是否會出場（用來解除停損鎖）。"""
+    return desired_position(LONG, close, ema_v, sma_v, mode) == FLAT
+
+
+def stop_price(entry_price: float, stop_loss_pct: float) -> float:
+    return entry_price * (1 - stop_loss_pct)
+
+
+def compute_signals(df: pd.DataFrame, params: StrategyParams) -> pd.DataFrame:
+    """逐根計算「不考慮停損」的策略部位，放在 `position` 欄（查詢與測試用）。"""
     out = add_indicators(df, params)
-    positions = []
-    pos = initial
+    pos, positions = FLAT, []
     for close, e, s in zip(out["close"], out["ema"], out["sma"]):
-        pos = next_position(pos, close, e, s, params.allow_short)
+        pos = desired_position(pos, close, e, s, params.mode)
         positions.append(pos)
     out["position"] = positions
     return out

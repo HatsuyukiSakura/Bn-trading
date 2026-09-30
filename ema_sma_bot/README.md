@@ -1,87 +1,96 @@
-# 幣安 4H EMA150 / SMA150 自動交易系統
+# 幣安 U 本位永續合約 4H EMA150 自動交易系統
 
-獨立運作的趨勢跟隨交易機器人：每根 **4 小時 K 線收盤** 後計算 EMA150 與 SMA150，
-依規則自動調整幣安帳戶部位。預設為 **USDⓈ-M 永續合約、多空雙向、3 倍逐倉**，也可切換成現貨只做多。
+依《幣安 U 本位永續合約 4H EMA150 趨勢策略：Windows 本地自動交易系統研究與實作報告》實作，
+另外加上**盤中停損**。
 
 ## 策略規則
 
-以「已收盤」K 線的收盤價判斷（不使用未收盤的 K 線，避免訊號重繪）：
-
-| 動作 | 條件 |
+| 項目 | 規則 |
 | --- | --- |
-| 做多進場 | close > EMA150 **且** close > SMA150 **且** EMA150 > SMA150 |
-| 做多出場 | close < EMA150 **且** close < SMA150（跌破兩條均線） |
-| 做空進場（合約 + `ALLOW_SHORT=true`） | close < EMA150 **且** close < SMA150 **且** EMA150 < SMA150 |
-| 做空出場 | close > EMA150 **且** close > SMA150 |
+| 訊號 | 4H 已收盤 K 棒：close > EMA150 → 做多；close < EMA150 → 平倉；相等 → 維持（`SIGNAL_MODE=ema`） |
+| 方向 | 純做多（出現非預期空單會自動以 reduceOnly 平掉） |
+| 標的 | BTC、ETH、SOL、XRP、DOGE、BNB、ADA、LINK、AVAX、LTC（USDT 永續），等權 1/N |
+| 槓桿 | 有效槓桿 ≤ 1 倍（總名目 ≤ 權益）；交易所端設 2 倍只當保證金緩衝；全倉、單向持倉、關閉聯合保證金 |
+| 再平衡 | 部位偏離目標 ±25% 以上才調整 |
+| **盤中停損** | 進場後立即在交易所掛 `STOP_MARKET` 條件單（Algo Order，`closePosition=true`），觸發價 = 進場均價 × (1 − 10%)，預設以**標記價**觸發，避免被成交價插針掃掉 |
+| 停損後 | 該標的上鎖，須等收盤跌破 EMA150（策略出場訊號）後才解鎖，之後再次站上 EMA150 才重新進場 |
+| 熔斷 | 權益自高點回撤 45% → 全部平倉、停機，需人工 `reset-halt` |
+| 暫停開倉 | 24 小時內權益下跌超過 20% → 暫停新開倉 |
+| 異常行情 | 標記價與收盤價偏離 > 2% 延後進場；K 棒缺漏時不動作（絕不把缺資料當成平倉訊號） |
 
-- 價格位於兩條均線之間時維持原部位，減少在均線附近被來回洗單。
-- 多單出場時若同時符合做空條件，會直接反手做空（反之亦然）。
-- EMA 算法與 TradingView / 幣安圖表一致（以前 150 根 SMA 為種子）。預設抓 1000 根 K 線讓 EMA 收斂。
+> `SIGNAL_MODE=ema_sma` 可改用 EMA150 + SMA150 雙均線規則（站上雙線且 EMA > SMA 進場、跌破雙線出場）。
 
-## 快速開始
+### 停損的雙重保護
+
+1. **交易所條件單**：`POST /fapi/v1/algoOrder`（2025 年底起條件單改走 Algo Order 服務，送 `/fapi/v1/order` 會回 `-4120`）。
+   每次對帳（每 5 分鐘）確認只有一張觸發價正確的停損單；加碼使均價改變時自動換單；部位出場後取消。
+   只處理 `clientAlgoId` 以 `sl-` 開頭的單，不會動到你手動掛的單。
+2. **軟體備援**：對帳時若標記價已低於停損價但部位仍在（條件單失效），直接 reduceOnly 市價平倉。
+
+## 系統設計（期望狀態收斂器）
+
+每 60 秒檢查一次；有新的已收盤 4H K 棒（收盤後 20 秒）或距上次對帳滿 5 分鐘，就執行一次對帳：
+
+1. 讀取權益 → 熔斷 / 24h 暫停檢查
+2. 每檔：抓永續 K 線（只取 `closeTime < 伺服器時間`，並確認最後一根就是上一個 4H 區間）→ 算 EMA150
+3. 與交易所**實際持倉**比對 → 下市價單補齊差額 → 同步停損條件單
+
+休眠、斷網、重開機或崩潰都只會讓收斂晚一點，不會重複下單：
+
+- `newClientOrderId` 由「標的、K 棒時間、方向、序號」決定，送單前先查詢是否已存在
+- 下單遇到 503「Unknown error」或網路中斷時**只查詢、不重送**
+- `-1021` 自動校時；429 依 `Retry-After` 等待；418 / `-2015` 通知並暫停 30 分鐘
+
+本地 SQLite（`state.db`）只存權益高點、熔斷旗標、停損鎖與下單紀錄；持倉一律以交易所為準。
+
+## 使用方式
 
 ```bash
 pip install -r ema_sma_bot/requirements.txt
-cp ema_sma_bot/.env.example .env      # 填入設定
-set -a; source .env; set +a
+cp ema_sma_bot/.env.example .env        # 填入測試網金鑰
 
-# 1. 查看目前指標與訊號（用公開行情，不需 API key）
-python -m ema_sma_bot signal
-
-# 2. 回測近 3 年
-python -m ema_sma_bot backtest --days 1095 --show-trades
-
-# 3. 模擬執行（DRY_RUN=true，只記錄不下單）
-python -m ema_sma_bot live
-
-# 4. 測試網實際下單：DRY_RUN=false、BINANCE_TESTNET=true，並填入測試網 API key
-# 5. 正式網：確認以上都沒問題後，才設 BINANCE_TESTNET=false
+python -m ema_sma_bot signal             # 各標的目前訊號（公開行情，不需金鑰）
+python -m ema_sma_bot backtest --start 2021-01-01 --per-symbol
+python -m ema_sma_bot backtest --stop-grid 0,0.05,0.08,0.1,0.15,0.2   # 比較停損幅度
+python -m ema_sma_bot once               # 執行一次對帳
+python -m ema_sma_bot live               # 常駐
+python -m ema_sma_bot reset-halt         # 熔斷後人工解除
 ```
 
-`once` 子指令只處理最新一根 K 線後結束，適合搭配 cron / Cloud Scheduler（例如每 4 小時的第 1 分鐘執行）：
+回測使用**永續合約 K 線 + `/fapi/v1/fundingRate` 實際資金費率**，手續費預設 0.05%（taker），
+下載的資料會快取在 `data/`。停損以 K 線最低價近似標記價觸發，跳空時以開盤價成交。
+各標的獨立計算後加總（實盤的 ±25% 再平衡未模擬）。
 
-```cron
-1 0,4,8,12,16,20 * * * cd /path/to/Bn-trading && python -m ema_sma_bot once
+**停損幅度請先用 `--stop-grid` 回測再決定。** 太緊的停損在 4H 趨勢策略裡容易被正常波動掃出場，
+而且停損後要等跌破 EMA 才會重新進場，可能錯過後續行情。
+
+## Windows 常駐（NSSM）
+
+```text
+nssm install BinanceEMA "C:\Python311\python.exe" "-m ema_sma_bot live"
+nssm set BinanceEMA AppDirectory "C:\bot\Bn-trading"
+nssm set BinanceEMA AppStdout "C:\bot\Bn-trading\logs\stdout.log"
+nssm set BinanceEMA AppStderr "C:\bot\Bn-trading\logs\stderr.log"
+nssm set BinanceEMA AppRotateFiles 1
+nssm set BinanceEMA AppExit Default Restart
+nssm set BinanceEMA AppRestartDelay 10000
+nssm set BinanceEMA Start SERVICE_DELAYED_AUTO_START
+nssm start BinanceEMA
 ```
 
-### Docker
+- 關閉休眠：`powercfg /change standby-timeout-ac 0`、`powercfg /h off`
+- 時間同步：`w32tm /config /manualpeerlist:"time.stdtime.gov.tw,0x8 time.google.com,0x8" /syncfromflags:manual /update` 後 `w32tm /resync`
+- 日誌在 `logs/bot.log`（每日輪替，保留 60 天）
 
-```bash
-docker build -f ema_sma_bot/Dockerfile -t ema-sma-bot .
-docker run -d --restart=always --env-file .env -v $(pwd)/data:/data ema-sma-bot
-```
+也可用 Docker：`docker build -f ema_sma_bot/Dockerfile -t ema-bot .`，
+`docker run -d --restart=always --env-file .env -v %cd%/data:/data ema-bot`。
 
-## 設定（環境變數）
+## 上線步驟（報告第十一章）
 
-| 變數 | 預設 | 說明 |
-| --- | --- | --- |
-| `BINANCE_API_KEY` / `BINANCE_API_SECRET` | – | API 金鑰（實盤必填）。請只開「讀取 + 交易」權限，**不要開提領**，並綁定 IP 白名單 |
-| `MARKET` | `futures` | `futures`（USDⓈ-M 永續，預設）或 `spot` |
-| `BINANCE_TESTNET` | `true` | 是否使用測試網 |
-| `BINANCE_BASE_URL` | – | 自訂 API 網址（例如合約 demo 環境） |
-| `DRY_RUN` | `true` | `true` 時只記錄、不下單 |
-| `SYMBOL` | `BTCUSDT` | 交易對 |
-| `INTERVAL` | `4h` | K 線週期 |
-| `EMA_PERIOD` / `SMA_PERIOD` | `150` | 均線週期 |
-| `POSITION_PCT` | `0.95` | 進場時使用可用 USDT 的比例 |
-| `ALLOW_SHORT` | `true` | 允許做空（僅合約） |
-| `LEVERAGE` | `3` | 槓桿（僅合約） |
-| `MARGIN_TYPE` | `ISOLATED` | 保證金模式：`ISOLATED` 逐倉 / `CROSSED` 全倉（僅合約；有持倉時無法切換） |
-| `KLINE_LIMIT` | `1000` | 計算指標用的 K 線數 |
-| `CLOSE_DELAY_SEC` | `5` | K 線收盤後延遲幾秒再抓資料 |
-| `STATE_FILE` | `ema_sma_bot_state.json` | 記錄已處理 K 線，重啟不會重複下單 |
-| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | – | 選用：交易與錯誤通知 |
-
-## 運作細節與注意事項
-
-- **部位以交易所實際持倉為準**：每次決策前查詢帳戶，因此程式重啟或手動調整後都能正確對齊。
-  - 現貨：帳上持有的基礎幣（如 BTC）價值 ≥ 最小下單金額即視為持多單，出場時會**全部賣出**。
-    請用**專用子帳戶**執行，避免賣掉你手動持有的幣。
-  - 合約：使用單向持倉模式（One-way），平倉時送出 `reduceOnly` 市價單。
-- 現貨買入使用 `quoteOrderQty`（以 USDT 金額下單），賣出與合約數量會依交易所 `stepSize` 無條件捨去。
-- 下單請求失敗不會自動重送（避免重複成交）；下次循環會重新查詢實際部位再決定。
-- 本策略**沒有盤中停損**，只在 4H 收盤時判斷。使用槓桿時請特別注意極端行情的風險。
-- 回測以「訊號 K 線的下一根開盤價」成交，預設單邊手續費 0.1%，未計滑價與資金費率。
+1. **回測補強**：用永續 K 線 + 實際資金費率重跑，並用 `--stop-grid` 決定停損幅度
+2. **測試網至少 2 週**：確認訊號與回測一致、精度 / reduceOnly / 停損單正常、斷網與重開機演練、重複執行不重複下單
+3. **小資金實盤 4–8 週**：預定資金的 5–10%，核對滑價、資金費與手續費
+4. **正式運行**：分 2–3 次加碼
 
 ## 測試
 
@@ -90,4 +99,5 @@ pip install pytest
 python -m pytest tests
 ```
 
-> 本程式僅供研究與學習，不構成投資建議。加密貨幣交易風險極高，請先以測試網與小額資金驗證。
+> 本程式僅供研究與學習，不構成投資建議。加密貨幣合約交易風險極高；台灣《虛擬資產服務法》
+> 目前不含衍生品業務類別，幣安亦未在台完成洗錢防制登記，請自行評估法規風險。
